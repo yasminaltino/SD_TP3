@@ -1,0 +1,168 @@
+version: "3.8"
+
+services:
+  mqtt_broker:
+    image: eclipse-mosquitto:2.0.15
+    container_name: mqtt_broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mqtt/data:/mosquitto/data
+      - ./mqtt/data:/mosquitto/log
+    networks:
+      - app-net
+
+  cluster_store_primary:
+    build:
+      context: .
+      dockerfile: Dockerfile-cluster-store
+    container_name: store-primary
+    environment:
+      - SERVER_PORT=6001
+      - IS_PRIMARY=true
+    networks:
+      - app-net
+    ports:
+      - "6001:6001"
+
+  cluster_store_backup1:
+    build:
+      context: .
+      dockerfile: Dockerfile-cluster-store
+    container_name: store-backup1
+    environment:
+      - SERVER_PORT=6002
+      - IS_PRIMARY=false
+    networks:
+      - app-net
+    ports:
+      - "6002:6002"
+
+  cluster_store_backup2:
+    build:
+      context: .
+      dockerfile: Dockerfile-cluster-store
+    container_name: store-backup2
+    environment:
+      - SERVER_PORT=6003
+      - IS_PRIMARY=false
+    networks:
+      - app-net
+    ports:
+      - "6003:6003"
+
+  application:
+    build:
+      context: .
+      dockerfile: Dockerfile-application
+    environment:
+      - MQTT_BROKER_HOST=mqtt_broker
+      - CLUSTER_STORE_HOST=cluster_store_primary
+      - CLUSTER_STORE_PORTS="6001,6002,6003"
+    networks:
+      - app-net
+    ports:
+      - "5000-5004:5000-5004"
+    depends_on:
+      - mqtt_broker
+      - cluster_store_primary
+      - cluster_store_backup1
+      - cluster_store_backup2
+
+  monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile-monitor
+    container_name: monitor
+    networks:
+      - app-net
+    ports:
+      - "6000:6000"
+      - "4999:4999"
+    depends_on:
+      - application
+
+  client1:
+    build:
+      context: .
+      dockerfile: Dockerfile-cliente
+    container_name: client1
+    environment:
+      - SERVER_HOST=application
+      - SERVER_PORT=5000
+      - MONITOR_HOST=monitor
+      - CLIENT_ID=1
+    networks:
+      - app-net
+    depends_on:
+      - application
+      - monitor
+
+  client2:
+    build:
+      context: .
+      dockerfile: Dockerfile-cliente
+    container_name: client2
+    environment:
+      - SERVER_HOST=application
+      - SERVER_PORT=5001
+      - MONITOR_HOST=monitor
+      - CLIENT_ID=2
+    networks:
+      - app-net
+    depends_on:
+      - application
+      - monitor
+
+  client3:
+    build:
+      context: .
+      dockerfile: Dockerfile-cliente
+    container_name: client3
+    environment:
+      - SERVER_HOST=application
+      - SERVER_PORT=5002
+      - MONITOR_HOST=monitor
+      - CLIENT_ID=3
+    networks:
+      - app-net
+    depends_on:
+      - application
+      - monitor
+
+  client4:
+    build:
+      context: .
+      dockerfile: Dockerfile-cliente
+    container_name: client4
+    environment:
+      - SERVER_HOST=application
+      - SERVER_PORT=5003
+      - MONITOR_HOST=monitor
+      - CLIENT_ID=4
+    networks:
+      - app-net
+    depends_on:
+      - application
+      - monitor
+
+  client5:
+    build:
+      context: .
+      dockerfile: Dockerfile-cliente
+    container_name: client5
+    environment:
+      - SERVER_HOST=application
+      - SERVER_PORT=5004
+      - MONITOR_HOST=monitor
+      - CLIENT_ID=5
+    networks:
+      - app-net
+    depends_on:
+      - application
+      - monitor
+
+networks:
+  app-net:
