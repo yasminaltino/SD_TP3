@@ -10,12 +10,21 @@ HOST = "0.0.0.0"
 
 CLUSTER_STORE_PORTS = [6001, 6002, 6003]
 
+ALL_CLUSTER_SERVERS = ["store-primary:6001", "store-backup1:6002", "store-backup2:6003"]
+MY_SERVER_ADDRESS = f"{socket.gethostname()}:{PORT}" # Get the container's hostname
+
 MONITOR_HOST = os.environ.get('MONITOR_HOST', 'monitor')
 MONITOR_PORT = 6000
 
 SERVER_ROLE = "backup" 
 
 STORE_DATA = {} 
+
+def monitor_heartbeat_thread_func():
+    """Thread for sending periodic status updates to the monitor."""
+    while True:
+        send_monitor_update(SERVER_ROLE.upper(), PORT)
+        time.sleep(3)  # Send a heartbeat every 3 seconds
 
 def send_monitor_update(role, port):
     """Envia uma mensagem de status para o monitor."""
@@ -58,14 +67,15 @@ def handle_client_connection(conn, addr):
         conn.close()
         print(f"Conexão com {addr} encerrada.")
 
-def propagate_update_to_backups(data, all_ports, my_port):
-    backup_ports = [p for p in all_ports if p != my_port]
+def propagate_update_to_backups(data, all_servers, my_host):
+    """Propaga a atualização para todos os servidores de backup."""
+    backup_servers = [s for s in all_servers if s != my_host]
     
-    if not backup_ports:
+    if not backup_servers:
         print("Não há backups para propagar a atualização.")
         return True
     
-    print(f"Propagando atualização para backups nas portas: {backup_ports}")
+    print(f"Propagando atualização para backups em: {backup_servers}")
     
     update_message = {
         "action": "update_backup",
@@ -74,15 +84,10 @@ def propagate_update_to_backups(data, all_ports, my_port):
     
     all_backups_succeeded = True
     
-    for port in backup_ports:
-        # ✅ CORREÇÃO: Mapeia a porta para o nome do serviço
-        host_map = {6001: "store-primary", 6002: "store-backup1", 6003: "store-backup2"}
-        host = host_map.get(port)
-        if not host:
-            print(f"⚠️ Erro: Não foi possível mapear a porta {port} para um host.")
-            all_backups_succeeded = False
-            continue
-
+    for host_and_port in backup_servers:
+        host, port = host_and_port.split(':')
+        port = int(port)
+        
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(5)
@@ -94,17 +99,16 @@ def propagate_update_to_backups(data, all_ports, my_port):
                 if response_data:
                     response = json.loads(response_data.decode('utf-8'))
                     if response.get("status") == "SUCCESS":
-                        print(f"Backup na porta {port} atualizado com sucesso.")
+                        print(f"Backup em {host}:{port} atualizado com sucesso.")
                     else:
-                        print(f"Backup na porta {port} falhou ao atualizar: {response.get('error')}")
+                        print(f"Backup em {host}:{port} falhou ao atualizar: {response.get('error')}")
                         all_backups_succeeded = False
                     
         except (socket.timeout, socket.error) as e:
-            print(f"Falha ao conectar ou comunicar com o backup na porta {port}: {e}")
+            print(f"Falha ao conectar ou comunicar com o backup em {host}:{port}: {e}")
             all_backups_succeeded = False
             
     return all_backups_succeeded
-
 
 def process_message(message):
     global STORE_DATA, SERVER_ROLE, PORT, CLUSTER_STORE_PORTS
@@ -118,10 +122,10 @@ def process_message(message):
             print(f"Dados escritos: {STORE_DATA}")
             
             # Atualiza o monitor com o status do primário
-            send_monitor_update("store_status", {"port": PORT, "role": "PRIMARY"})
+            send_monitor_update(SERVER_ROLE.upper(), PORT)
+
             
-            propagate_update_to_backups(STORE_DATA, CLUSTER_STORE_PORTS, PORT)
-            
+            propagate_update_to_backups(STORE_DATA, ALL_CLUSTER_SERVERS, MY_SERVER_ADDRESS)
             return {"status": "SUCCESS", "message": "Dados escritos e propagados."}
         else:
             return {"status": "FAILED", "error": "Este servidor não é o primário."}
@@ -136,7 +140,8 @@ def process_message(message):
             print(f"Dados atualizados pelo primário: {STORE_DATA}")
             
             # Atualiza o monitor com o status do backup
-            send_monitor_update("store_status", {"port": PORT, "role": "BACKUP"})
+            send_monitor_update(SERVER_ROLE.upper(), PORT)
+
             
             return {"status": "SUCCESS", "message": "Backup atualizado com sucesso."}
         else:
@@ -153,7 +158,13 @@ if __name__ == "__main__":
         print("Este servidor é um backup.")
         
     # Envia o status inicial para o monitor
-    send_monitor_update("store_status", {"port": PORT, "role": SERVER_ROLE.upper()})
+    send_monitor_update(SERVER_ROLE.upper(), PORT)
+    
+    # 🆕 Start the heartbeat thread
+    heartbeat_thread = threading.Thread(target=monitor_heartbeat_thread_func)
+    heartbeat_thread.daemon = True
+    heartbeat_thread.start()
+
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((HOST, PORT))

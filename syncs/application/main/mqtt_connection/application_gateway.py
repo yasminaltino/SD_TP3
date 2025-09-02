@@ -30,6 +30,12 @@ NETWORK_LISTEN_PORT = int(sys.argv[1])
 CLUSTER_STORE_PORTS = [6001, 6002, 6003]
 CLUSTER_STORE_HOST = os.environ.get('CLUSTER_STORE_HOST', 'cluster_store_primary')
 
+CLUSTER_STORE_SERVERS = [
+    "cluster_store_primary:6001",
+    "cluster_store_backup1:6002",
+    "cluster_store_backup2:6003"
+]
+
 
 # --- Shared Queues ---
 incoming_network_messages_queue = queue.Queue()
@@ -41,7 +47,7 @@ client_connections = {}
 client_waiting_for_access = {}
 
 mqtt_connection_manager = None
-cluster_store_client = ClusterStoreClient(CLUSTER_STORE_HOST, CLUSTER_STORE_PORTS)
+cluster_store_client = ClusterStoreClient(CLUSTER_STORE_SERVERS)
 
 MONITOR_HOST = os.environ.get('MONITOR_HOST', 'monitor')
 MONITOR_PORT = 6000
