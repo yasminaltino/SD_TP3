@@ -1,9 +1,12 @@
+import datetime
 import socket
 import threading
 import json
 import sys
 import os
 import time
+import hashlib 
+import signal
 
 PORT = int(os.environ.get("SERVER_PORT"))
 HOST = "0.0.0.0"
@@ -19,6 +22,28 @@ MONITOR_PORT = 6000
 SERVER_ROLE = "backup" 
 
 STORE_DATA = {} 
+
+def exit_handler(signum, frame):
+    """Handles graceful shutdown by writing the final hash and then exiting."""
+    print("Received shutdown signal. Writing final hash to log...")
+    final_hash = calculate_store_hash()
+    log_entry = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Final Hash for {SERVER_ROLE.upper()} on port {PORT}: {final_hash}\n"
+    
+    try:
+        with open("/logs/store_hashes.log", "a") as log_file:
+            log_file.write(log_entry)
+            log_file.flush()
+        print(f"✅ Final hash written to /logs/store_hashes.log: {final_hash}")
+    except Exception as e:
+        print(f"❌ Error writing to log file: {e}")
+    sys.exit(0)
+
+
+def calculate_store_hash():
+    """Calculates a SHA-256 hash of the store data for verification."""
+    # Sort the dictionary keys to ensure a consistent hash
+    sorted_data = json.dumps(STORE_DATA, sort_keys=True).encode('utf-8')
+    return hashlib.sha256(sorted_data).hexdigest()
 
 def monitor_heartbeat_thread_func():
     """Thread for sending periodic status updates to the monitor."""
@@ -151,6 +176,10 @@ def process_message(message):
         return {"status": "FAILED", "error": "Ação desconhecida."}
 
 if __name__ == "__main__":
+
+    signal.signal(signal.SIGTERM, exit_handler)
+    signal.signal(signal.SIGINT, exit_handler)
+    
     if PORT == 6001:
         SERVER_ROLE = "primary"
         print("Este servidor é o primário inicial.")
@@ -180,4 +209,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nServidor encerrado pelo usuário.")
     finally:
+
+            
         server_socket.close()
+

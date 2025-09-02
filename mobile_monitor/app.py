@@ -3,7 +3,7 @@ import socket
 import threading
 import json
 import time
-
+import signal, sys
 app = Flask(__name__)
 
 # Global state for both clusters
@@ -36,6 +36,14 @@ def get_status():
         'syncs': sync_status,
         'stores': store_status
     })
+
+
+
+def handler(signum, frame):
+    print("Shutting down monitor gracefully...")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handler)
 
 def start_monitoring_server():
     def server_thread():
