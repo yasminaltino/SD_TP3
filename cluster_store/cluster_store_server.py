@@ -383,11 +383,9 @@ def propagate_update_to_backups(data, all_servers, my_host):
                 s.settimeout(3)
                 s.connect((host, port))
                 
-                # ✅ CORRIGIDO: Verificar tamanho da mensagem para evitar truncamento
                 message_json = json.dumps(update_message)
                 if len(message_json) > 1000:  # Se mensagem muito grande, enviar em partes
                     print(f"⚠️ Mensagem grande ({len(message_json)} bytes) para {host}:{port} - enviando dados resumidos")
-                    # Enviar apenas o último item adicionado
                     last_key = max(data.keys()) if data else None
                     if last_key:
                         smaller_update = {
