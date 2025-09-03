@@ -141,8 +141,6 @@ if __name__ == "__main__":
                         log_event("ACCESS_GRANTED", client_id, f"Request #{request_number}")
                         print(f"🎉 Client {client_id}: Access granted for request {request_number}!")
                         
-                        # --- NOVO TRECHO PARA O TP3 ---
-                        # Aqui, o cliente agora se comunica com o Cluster Store através do Sync
                         action = random.choice(["write", "read"])
                         
                         if action == "write":

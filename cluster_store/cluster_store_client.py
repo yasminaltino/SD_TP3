@@ -1,5 +1,3 @@
-# In cluster_store_client.py
-
 import json
 import random
 import socket
@@ -16,29 +14,73 @@ class ClusterStoreClient:
         self.primary_port = int(self.primary_port)
         self.conns = {}
         
+    def find_current_primary(self):
+        """Find which server is currently accepting writes (the primary)."""
+        
+        for i, server in enumerate(self.servers):
+            host, port = server.split(':')
+            port = int(port)
+            
+            try:
+                conn = self.get_connection(host, port)
+                if not conn:
+                    continue
+                    
+                # Send a ping to check if this server is primary
+                test_message = {"action": "ping"}
+                conn.sendall(json.dumps(test_message).encode('utf-8'))
+                
+                response_data = conn.recv(4096)
+                if response_data:
+                    response = json.loads(response_data.decode('utf-8'))
+                    if response.get("status") == "PONG" and response.get("role") == "primary":
+                        print(f"✅ Found primary at {host}:{port}")
+                        self.primary_index = i
+                        self.primary_host, self.primary_port = host, port
+                        return True
+                    else:
+                        role = response.get("role", "unknown")
+                        print(f"ℹ️ {host}:{port} is {role}")
+                        continue
+                        
+            except Exception as e:
+                print(f"❌ Error testing {host}:{port}: {e}")
+                # Close failed connection
+                key = f"{host}:{port}"
+                if key in self.conns:
+                    try:
+                        self.conns[key].close()
+                    except:
+                        pass
+                    del self.conns[key]
+                continue
+                
+        print("❌ No primary server found!")
+        return False
+        
     def get_connection(self, host, port):
         """Get or create a connection for a specific host and port."""
         key = f"{host}:{port}"
         if key not in self.conns:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(8)  # Increased timeout to 8 seconds
+                s.settimeout(8) 
                 s.connect((host, port))
                 self.conns[key] = s
                 return s
             except(socket.error, socket.timeout) as e:
-                print (f"Falha ao conectar com o servidor em {host}:{port}: {e}")
+                print (f"Failed to connect to server at {host}:{port}: {e}")
                 return None
         return self.conns[key]
     
     def close_connections(self):
-        """Fecha todas as conexões ativas."""
+        """Close all active connections."""
         for conn in self.conns.values():
             conn.close()
         self.conns = {}
     
     def send_write_request(self, data):
-        """Envia uma requisição de escrita para o servidor primário."""
+        """Send a write request to the primary server."""
         max_retries = 3
         for attempt in range(max_retries):
             print(f"✍️ Write attempt {attempt + 1}: Trying primary {self.primary_host}:{self.primary_port}")
@@ -46,8 +88,12 @@ class ClusterStoreClient:
                 conn = self.get_connection(self.primary_host, self.primary_port)
                 if not conn:
                     print(f"❌ Failed to connect to primary")
-                    self.handle_primary_failure()
-                    continue
+                    if not self.find_current_primary():
+                        continue
+                    # Retry with new primary
+                    conn = self.get_connection(self.primary_host, self.primary_port)
+                    if not conn:
+                        continue
 
                 message = {"action": "write", "data": data}
                 conn.sendall(json.dumps(message).encode('utf-8'))
@@ -58,6 +104,12 @@ class ClusterStoreClient:
                     if response.get("status") == "SUCCESS":
                         print(f"✅ Write successful to primary {self.primary_host}:{self.primary_port}")
                         return True
+                    elif "não é o primário" in response.get('error', '').lower():
+                        print(f"⚠️ Server {self.primary_host}:{self.primary_port} is no longer primary, searching for new primary...")
+                        if self.find_current_primary():
+                            continue  # Retry with new primary
+                        else:
+                            return False
                     else:
                         error_msg = response.get('error', 'unknown error')
                         print(f"❌ Primary reported error: {error_msg}")
@@ -77,14 +129,17 @@ class ClusterStoreClient:
                         pass
                     del self.conns[key]
                 
-                self.handle_primary_failure()
+                # Try to find new primary
+                if not self.find_current_primary():
+                    time.sleep(1)
+                    continue
                 time.sleep(1)
 
         print("❌ Write failed after all retries")
         return False
     
     def send_read_request(self):
-        """Envia uma requisição de leitura para uma réplica aleatória."""
+        """Send a read request to a random replica."""
         max_attempts = 3
         for attempt in range(max_attempts):
             random_server = random.choice(self.servers)
@@ -131,17 +186,3 @@ class ClusterStoreClient:
                 
         print("❌ Failed to read after all attempts")
         return None
-        
-    def handle_primary_failure(self):
-        """Lógica simples de eleição de novo primário."""
-        print(f"Primário em {self.primary_host}:{self.primary_port} parece ter falhado. Iniciando eleição...")
-        
-        key = f"{self.primary_host}:{self.primary_port}"
-        if key in self.conns:
-            self.conns[key].close()
-            del self.conns[key]
-
-        self.primary_index = (self.primary_index + 1) % len(self.servers)
-        self.primary_host, self.primary_port = self.servers[self.primary_index].split(':')
-        self.primary_port = int(self.primary_port)
-        print(f"Novo primário eleito: {self.primary_host}:{self.primary_port}.")

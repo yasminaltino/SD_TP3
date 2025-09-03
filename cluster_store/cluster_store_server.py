@@ -24,13 +24,13 @@ SERVER_ROLE = "backup"
 
 STORE_DATA = {} 
 
-# 🆕 Fault tolerance configurations
+# Fault tolerance configurations
 HEARTBEAT_TIMEOUT = 10  # seconds
 ELECTION_TIMEOUT = 5    # seconds
 BACKUP_PROMOTION_TIMEOUT = 8  # seconds
 PING_INTERVAL = 3       # seconds
 
-# 🆕 Fault tolerance state
+# Fault tolerance state
 server_status = {}  # Track status of other servers
 last_heartbeat = {}  # Track last heartbeat from servers
 is_in_election = False
@@ -43,13 +43,14 @@ def exit_handler(signum, frame):
     os.environ['TZ'] = 'America/Sao_Paulo'
     time.tzset()
     final_hash = calculate_store_hash()
-    log_entry = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Final Hash for {SERVER_ROLE.upper()} on port {PORT}: {final_hash}\n"
+    items_count = len(STORE_DATA)
+    
+    log_entry = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] SHUTDOWN - Final Hash for {SERVER_ROLE.upper()} on port {PORT}: {final_hash} (Items: {items_count})\n"
     
     try:
         with open("/logs/store_hashes.log", "a") as log_file:
             log_file.write(log_entry)
             log_file.flush()
-        print(f"✅ Final hash written to /logs/store_hashes.log: {final_hash}")
     except Exception as e:
         print(f"❌ Error writing to log file: {e}")
     sys.exit(0)
@@ -87,7 +88,7 @@ def send_monitor_update(role, port):
     except Exception as e:
         print(f"❌ Erro ao enviar status para o monitor: {e}")
 
-# 🆕 Fault Detection and Recovery Functions
+# Fault Detection and Recovery Functions
 
 def ping_servers_thread():
     """Thread to periodically ping other servers and detect failures."""
@@ -269,7 +270,9 @@ def promote_to_primary():
     """Promote this backup server to primary."""
     global SERVER_ROLE, is_in_election
     
-    print(f"🎉 PROMOTING {MY_SERVER_ADDRESS} TO PRIMARY!")
+    print(f"🎉 [{time.strftime('%H:%M:%S')}] PROMOTING {MY_SERVER_ADDRESS} TO PRIMARY!")
+    print(f"📊 Current store state: {len(STORE_DATA)} items")
+    
     SERVER_ROLE = "primary"
     is_in_election = False
     
@@ -277,7 +280,12 @@ def promote_to_primary():
     send_monitor_update("PRIMARY", PORT)
     announce_new_primary()
     
-    log_fault_event(f"PROMOTION: {MY_SERVER_ADDRESS} promoted to PRIMARY")
+    log_fault_event(f"PROMOTION: {MY_SERVER_ADDRESS} promoted to PRIMARY with {len(STORE_DATA)} items")
+    
+    # Log current store contents for debugging
+    if STORE_DATA:
+        recent_keys = list(STORE_DATA.keys())[-3:]
+        print(f"📋 Last keys in new primary: {recent_keys}")
 
 def announce_new_primary():
     """Announce to all servers that this server is now primary."""
@@ -319,7 +327,6 @@ def handle_client_connection(conn, addr):
     print(f"Conexão aceita de {addr}")
     try:
         while True:
-            # ✅ CORRIGIDO: Receber mensagens maiores para evitar truncamento
             data = conn.recv(4096)  # Aumentado de 1024 para 4096 bytes
             if not data:
                 break
@@ -347,10 +354,8 @@ def handle_client_connection(conn, addr):
 
 def propagate_update_to_backups(data, all_servers, my_host):
     """Propaga a atualização para todos os servidores de backup ativos."""
-    # ✅ CORRIGIDO: Filtrar corretamente backups ativos, excluindo a si mesmo
     backup_servers = []
     for s in all_servers:
-        # ✅ CORREÇÃO PRINCIPAL: Usar comparação mais robusta para excluir a si mesmo
         if s != my_host and f":{PORT}" not in s:  # Excluir qualquer servidor na mesma porta
             server_status_check = server_status.get(s, "UNKNOWN")
             if server_status_check != "FAILED":
@@ -362,7 +367,6 @@ def propagate_update_to_backups(data, all_servers, my_host):
     
     print(f"Propagando atualização para backups em: {backup_servers}")
     
-    # ✅ CORRIGIDO: Enviar apenas os dados novos, não o STORE_DATA completo
     update_message = {
         "action": "update_backup",
         "data": data 
@@ -430,11 +434,11 @@ def process_message(message):
     global STORE_DATA, SERVER_ROLE, PORT, CLUSTER_STORE_PORTS, is_in_election
     action = message.get("action")
     
-    # 🆕 Handle PING messages
+    # Handle PING messages
     if action == "ping":
         return {"status": "PONG", "server": MY_SERVER_ADDRESS, "role": SERVER_ROLE}
     
-    # 🆕 Handle election messages
+    # Handle election messages
     elif action == "election":
         candidate = message.get("candidate")
         candidate_priority = message.get("candidate_priority", 9999)
@@ -447,7 +451,7 @@ def process_message(message):
         
         return {"status": "SUCCESS", "vote": vote, "voter": MY_SERVER_ADDRESS}
     
-    # 🆕 Handle new primary announcements
+    # Handle new primary announcements
     elif action == "new_primary_announcement":
         new_primary = message.get("new_primary")
         print(f"📢 Acknowledged new primary: {new_primary}")
@@ -462,12 +466,11 @@ def process_message(message):
             data = message.get("data")
             key = f"chave_{os.getpid()}_{int(time.time())}"
             STORE_DATA[key] = data
-            print(f"✅ Dados escritos: {key} = {data}")
+            print(f"✅ [{time.strftime('%H:%M:%S')}] PRIMARY {PORT} - Dados escritos: {key} = {data[:50]}... (Total items: {len(STORE_DATA)})")
             
             # Atualiza o monitor com o status do primário
             send_monitor_update(SERVER_ROLE.upper(), PORT)
 
-            # ✅ CORRIGIDO: Propagar apenas o novo item, não todo o STORE_DATA
             new_data = {key: data}
             propagation_success = propagate_update_to_backups(new_data, ALL_CLUSTER_SERVERS, MY_SERVER_ADDRESS)
             
@@ -476,10 +479,10 @@ def process_message(message):
             else:
                 return {"status": "SUCCESS", "message": "Dados escritos no primário. Alguns backups podem estar indisponíveis."}
         else:
+            print(f"❌ [{time.strftime('%H:%M:%S')}] WRITE rejected - Server {PORT} is not primary (role: {SERVER_ROLE})")
             return {"status": "FAILED", "error": "Este servidor não é o primário."}
             
     elif action == "read":
-        # ✅ CORRIGIDO: Retornar dados locais sempre, independente do role
         print(f"📖 Leitura solicitada - Retornando dados locais")
         return {"status": "SUCCESS", "data": STORE_DATA, "server": MY_SERVER_ADDRESS, "role": SERVER_ROLE}
         
@@ -487,17 +490,19 @@ def process_message(message):
         if SERVER_ROLE == "backup":
             updated_data = message.get("data")
             if updated_data:
-                # ✅ CORRIGIDO: Atualizar apenas os novos dados recebidos
                 STORE_DATA.update(updated_data)
-                print(f"✅ Backup atualizado com {len(updated_data)} novos itens")
+                new_keys = list(updated_data.keys())
+                print(f"✅ [{time.strftime('%H:%M:%S')}] BACKUP {PORT} - Recebeu update: {new_keys} (Total items: {len(STORE_DATA)})")
                 
                 # Atualiza o monitor com o status do backup
                 send_monitor_update(SERVER_ROLE.upper(), PORT)
                 
                 return {"status": "SUCCESS", "message": f"Backup atualizado com {len(updated_data)} itens."}
             else:
+                print(f"❌ [{time.strftime('%H:%M:%S')}] BACKUP {PORT} - Update sem dados")
                 return {"status": "FAILED", "error": "Nenhum dado fornecido para atualização."}
         else:
+            print(f"❌ [{time.strftime('%H:%M:%S')}] UPDATE_BACKUP rejected - Server {PORT} is not backup (role: {SERVER_ROLE})")
             return {"status": "FAILED", "error": "Requisição 'update_backup' recebida por um servidor que não é backup."}
 
     else:
@@ -525,12 +530,12 @@ if __name__ == "__main__":
     # Envia o status inicial para o monitor
     send_monitor_update(SERVER_ROLE.upper(), PORT)
     
-    # 🆕 Start the heartbeat thread
+    # Start the heartbeat thread
     heartbeat_thread = threading.Thread(target=monitor_heartbeat_thread_func)
     heartbeat_thread.daemon = True
     heartbeat_thread.start()
 
-    # 🆕 Start the ping/fault detection thread
+    # Start the ping/fault detection thread
     ping_thread = threading.Thread(target=ping_servers_thread)
     ping_thread.daemon = True
     ping_thread.start()
@@ -547,6 +552,7 @@ if __name__ == "__main__":
             thread.daemon = True
             thread.start()
     except KeyboardInterrupt:
-        print("\nServidor encerrado pelo usuário.")
+        print(f"\n🛑 [{time.strftime('%H:%M:%S')}] Servidor {SERVER_ROLE.upper()} {PORT} encerrado pelo usuário.")
+        print(f"📊 Final state: {len(STORE_DATA)} items stored")
     finally:
         server_socket.close()

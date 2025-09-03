@@ -18,7 +18,6 @@ MQTT_USER = "your_mqtt_user"
 MQTT_PASSWORD = "your_mqtt_password"
 MQTT_TOPIC = "BCC362"
 
-# defines an ID for the application. Weak approach, should be changed on a formal application
 PROCESS_ID = os.getpid()
 MQTT_CLIENT_NAME = f"MyApplicationGateway_{PROCESS_ID}"
 
@@ -111,7 +110,7 @@ def handle_network_client_connection(conn, addr):
             incoming_network_messages_queue.put(message_data)
 
     except Exception as e:
-        pass  # Conexão perdida, normal
+        pass 
     finally:
         if current_client_id:
             print(f"🔌 Client {current_client_id} disconnected")
@@ -134,7 +133,6 @@ def send_response_to_client(client_id, response_data):
             response_json = json.dumps(response_data)
             conn.sendall(response_json.encode('utf-8'))
             
-            # Só imprimir respostas importantes
             if response_data.get('status') == 'GRANTED':
                 print(f"✅ GRANTED access to client {client_id}")
                 client_waiting_for_access.pop(client_id, None)
@@ -208,7 +206,6 @@ def application_logic_thread_func():
                         
                         print(f"💾 Client {client_id} performing {action} operation")
 
-                        # Chamar o ClusterStoreClient com timeout
                         try:
                             if action == "write":
                                 success = cluster_store_client.send_write_request(data)
@@ -234,7 +231,6 @@ def application_logic_thread_func():
                             send_response_to_client(client_id, {"status": "FAILED", "message": "Store action failed"})
                             print(f"❌ Client {client_id} operation {action} failed")
                             
-                        # Publicar DONE via MQTT (sempre, independente do sucesso)
                         done_payload = json.dumps({
                             "command": "DONE", 
                             "client_id": client_id, 
