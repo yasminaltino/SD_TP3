@@ -126,7 +126,7 @@ if __name__ == "__main__":
         exit(1)
     
     try:
-        for request_number in range(1, 50):  # The client accesses the resource 50 times
+        for request_number in range(1, 51):  # The client accesses the resource 50 times
             print(f"\n=== Request {request_number}/50 ===")
             
             json_message = {"command": "REQUEST_ACCESS", "client_id": f"{client_id}"}
