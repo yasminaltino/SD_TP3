@@ -1,0 +1,8 @@
+🎯 Starting Mobile Monitor Server...
+❌ Server error: [Errno 98] Address already in use
+🌐 Access from mobile: http://192.168.0.112:4999
+💻 Local access: http://localhost:4999
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 4999 is in use by another program. Either identify and stop that program, or start the server with a different port.

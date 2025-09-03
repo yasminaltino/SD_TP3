@@ -1,0 +1,17 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Adiciona o diretório principal do projeto ao PYTHONPATH para permitir importações
+ENV PYTHONPATH=/app
+
+COPY cluster_store /app/cluster_store
+COPY syncs/ /app/syncs
+
+COPY launch_application.sh /app/launch_application.sh
+RUN chmod +x /app/launch_application.sh
+
+CMD ["./launch_application.sh"]

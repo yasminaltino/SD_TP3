@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <title>Sistemas Distribuídos TP3 Monitor</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+        min-height: 100vh;
+        padding: 20px;
+        overflow-x: hidden;
+        color: #ecf0f1;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .header h1 {
+        font-size: 28px;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      .section-title {
+        font-size: 22px;
+        font-weight: bold;
+        color: #ecf0f1;
+        margin-top: 40px;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 5px;
+      }
+
+      .grid-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 15px;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
+      .card {
+        background: #34495e;
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: 2px solid #4a667f;
+        position: relative;
+        overflow: hidden;
+        width: 180px;
+        text-align: center;
+        min-height: 120px;
+      }
+
+      .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+      }
+
+      .card-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #ecf0f1;
+        margin-bottom: 8px;
+      }
+
+      .card-status {
+        font-size: 14px;
+        color: #bdc3c7;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        animation: blink 1.5s infinite;
+      }
+
+      .status-dot.green {
+        background-color: #2ecc71;
+      }
+      .status-dot.orange {
+        background-color: #e67e22;
+      }
+      .status-dot.red {
+        background-color: #e74c3c;
+        animation: shake 0.5s infinite;
+      }
+      .status-dot.yellow {
+        background-color: #f1c40f;
+      }
+      .status-dot.grey {
+        background-color: #95a5a6;
+      }
+
+      @keyframes blink {
+        0%,
+        50% {
+          opacity: 1;
+        }
+        51%,
+        100% {
+          opacity: 0.3;
+        }
+      }
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        25% {
+          transform: translateX(-2px);
+        }
+        75% {
+          transform: translateX(2px);
+        }
+      }
+
+      .connection-status {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        padding: 8px 12px;
+        border-radius: 20px;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+        z-index: 1000;
+      }
+
+      .connected {
+        background-color: #2ecc71;
+      }
+      .disconnected {
+        background-color: #e74c3c;
+        animation: shake 0.5s infinite;
+      }
+
+      .status-info {
+        font-size: 14px;
+        opacity: 0.9;
+        margin-bottom: 5px;
+      }
+
+      .id-text {
+        font-size: 12px;
+        color: #7f8c8d;
+        margin-top: 5px;
+      }
+
+      .install-prompt {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        background: #333;
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        display: none;
+        z-index: 1001;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="connection-status connected" id="connectionStatus">
+      🟢 Connected
+    </div>
+
+    <div class="header">
+      <h1>Sistemas Distribuídos TP3 Monitor</h1>
+      <div class="status-info" id="lastUpdate">Connecting...</div>
+    </div>
+
+    <div class="section-title">Cluster Sync</div>
+    <div class="grid-container" id="syncGrid"></div>
+
+    <div class="section-title">Cluster Store</div>
+    <div class="grid-container" id="storeGrid"></div>
+
+    <div class="install-prompt" id="installPrompt">
+      📱 Install this app on your phone for a better experience!
+      <button class="install-btn" onclick="installApp()">Install</button>
+      <button
+        class="install-btn"
+        onclick="hideInstallPrompt()"
+        style="background: #666"
+      >
+        Later
+      </button>
+    </div>
+
+    <script>
+      let deferredPrompt;
+      let lastUpdate = Date.now();
+      let isConnected = true;
+
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById("installPrompt").style.display = "block";
+      });
+
+      function installApp() {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then((choiceResult) => {
+            deferredPrompt = null;
+            hideInstallPrompt();
+          });
+        }
+      }
+
+      function hideInstallPrompt() {
+        document.getElementById("installPrompt").style.display = "none";
+      }
+
+      function updateConnectionStatus(connected) {
+        const statusEl = document.getElementById("connectionStatus");
+        if (connected !== isConnected) {
+          isConnected = connected;
+          statusEl.className = `connection-status ${
+            connected ? "connected" : "disconnected"
+          }`;
+          statusEl.textContent = connected ? "🟢 Connected" : "🔴 Disconnected";
+        }
+      }
+
+      function getStatusInfo(status) {
+        switch (status) {
+          case "ENTERING_CRITICAL":
+            return { text: "🔥 IN CRITICAL SECTION", dotClass: "orange" };
+          case "WAITING":
+            return { text: "⏳ WAITING FOR ACCESS", dotClass: "yellow" };
+          case "LEAVING_CRITICAL":
+            return { text: "✅ LEAVING CRITICAL", dotClass: "green" };
+          default:
+            return { text: "⚪ INACTIVE", dotClass: "grey" };
+        }
+      }
+
+      function getStoreRoleInfo(role) {
+        switch (role) {
+          case "PRIMARY":
+            return { text: "👑 PRIMARY", dotClass: "orange" };
+          case "BACKUP":
+            return { text: "🛡️ BACKUP", dotClass: "green" };
+          case "INACTIVE":
+            return { text: "🔴 INACTIVE", dotClass: "red" };
+          default:
+            return { text: "⚪ UNKNOWN", dotClass: "grey" };
+        }
+      }
+
+      function renderCards(containerId, data, isSync) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = "";
+
+        Object.entries(data).forEach(([key, item]) => {
+          let statusInfo;
+          let idText = "";
+
+          if (isSync) {
+            statusInfo = getStatusInfo(item.active);
+            idText = `PID: ${item.client_id || "Not assigned"}`;
+          } else {
+            statusInfo = getStoreRoleInfo(item.role);
+            idText = `PORT: ${item.port || "Not assigned"}`;
+          }
+
+          const card = document.createElement("div");
+          card.className = `card`;
+
+          card.innerHTML = `
+                    <div class="card-title">${key
+                      .toUpperCase()
+                      .replace("_", " ")}</div>
+                    <div class="card-status">
+                        <span class="status-dot ${statusInfo.dotClass}"></span>
+                        <span>${statusInfo.text}</span>
+                    </div>
+                    <div class="id-text">${idText}</div>
+                `;
+
+          container.appendChild(card);
+        });
+      }
+
+      function updateStatus() {
+        fetch("/api/status")
+          .then((response) => {
+            if (!response.ok) throw new Error("Network error");
+            return response.json();
+          })
+          .then((data) => {
+            updateConnectionStatus(true);
+            renderCards("syncGrid", data.syncs, true);
+            renderCards("storeGrid", data.stores, false);
+
+            lastUpdate = Date.now();
+            document.getElementById(
+              "lastUpdate"
+            ).textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+          })
+          .catch((error) => {
+            console.error("Error:", error);
+            updateConnectionStatus(false);
+            document.getElementById(
+              "lastUpdate"
+            ).textContent = `Connection error: ${error.message}`;
+          });
+      }
+
+      setInterval(updateStatus, 300);
+      updateStatus();
+
+      setInterval(() => {
+        if (Date.now() - lastUpdate > 3000) {
+          updateConnectionStatus(false);
+        }
+      }, 1000);
+
+      let lastTouchEnd = 0;
+      document.addEventListener(
+        "touchend",
+        function (event) {
+          const now = new Date().getTime();
+          if (now - lastTouchEnd <= 300) {
+            event.preventDefault();
+          }
+          lastTouchEnd = now;
+        },
+        false
+      );
+    </script>
+  </body>
+</html>
